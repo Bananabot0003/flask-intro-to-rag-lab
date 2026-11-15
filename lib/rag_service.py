@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 import re
@@ -50,46 +51,49 @@ STOPWORDS = {
 
 
 def tokenize(text: str) -> set[str]:
-    """Convert text into a set of searchable lowercase tokens.
+    """Convert text into searchable lowercase tokens."""
+    words = re.findall(r"[\w']+", text.lower())
 
-    TODO:
-    - Lowercase the text.
-    - Extract word-like values.
-    - Remove leading/trailing apostrophes.
-    - Remove tokens with length <= 1.
-    - Remove tokens in STOPWORDS.
-    - Return a set of searchable terms.
-    """
-    # TODO: Replace this placeholder with your implementation.
-    return set()
+    tokens = {
+        word.strip("'")
+        for word in words
+    }
+
+    return {
+        token
+        for token in tokens
+        if len(token) > 1 and token not in STOPWORDS
+    }
 
 
 def document_search_text(document: dict[str, Any]) -> str:
-    """Combine searchable document fields into one text value.
+    """Combine searchable document fields."""
+    title = document.get("title", "")
+    category = document.get("category", "")
+    tags = document.get("tags", [])
+    body = document.get("text", "")
 
-    TODO:
-    Include title, category, tags, and text.
-    """
-    # TODO: Replace this placeholder with your implementation.
-    return ""
+    if isinstance(tags, list):
+        tags = " ".join(str(tag) for tag in tags)
+
+    return f"{title} {category} {tags} {body}"
 
 
 def score_document(query: str, document: dict[str, Any]) -> dict[str, Any]:
-    """Score a document using keyword overlap.
+    """Calculate relevance using keyword overlap."""
+    query_tokens = tokenize(query)
+    document_tokens = tokenize(document_search_text(document))
+    title_tokens = tokenize(document.get("title", ""))
 
-    TODO:
-    - Tokenize the query.
-    - Tokenize the combined searchable document text.
-    - Tokenize the document title.
-    - Find matched terms between query tokens and document tokens.
-    - Add a small title boost: 0.5 for each query token found in the title.
-    - Return a dictionary with keys: document, score, matched_terms.
-    """
-    # TODO: Replace this placeholder with your implementation.
+    matched_terms = query_tokens.intersection(document_tokens)
+
+    score = len(matched_terms)
+    score += 0.5 * len(query_tokens.intersection(title_tokens))
+
     return {
         "document": document,
-        "score": 0,
-        "matched_terms": [],
+        "score": score,
+        "matched_terms": sorted(matched_terms),
     }
 
 
@@ -99,55 +103,78 @@ def retrieve_context(
     limit: int = 2,
     minimum_score: float = 1.0,
 ) -> list[dict[str, Any]]:
-    """Select the most relevant documents for the query.
+    """Retrieve the highest-scoring matching documents."""
 
-    TODO:
-    - Score all documents.
-    - Keep only matches with score >= minimum_score.
-    - Sort by score from highest to lowest.
-    - Return only the top `limit` matches.
+    scored_documents = [
+        score_document(query, document)
+        for document in documents
+    ]
 
-    The selected context must depend on the user's query. Do not return the same
-    hardcoded document for every request.
-    """
-    # TODO: Replace this placeholder with your implementation.
-    return []
+    relevant_documents = [
+        match
+        for match in scored_documents
+        if match["score"] >= minimum_score
+    ]
+
+    relevant_documents.sort(
+        key=lambda match: match["score"],
+        reverse=True
+    )
+
+    return relevant_documents[:limit]
 
 
 def format_context(context_matches: list[dict[str, Any]]) -> str:
-    """Format retrieved documents into a context block for the prompt.
+    """Format retrieved documents for the AI prompt."""
+    if not context_matches:
+        return "No relevant context was found."
 
-    TODO:
-    - If no matches exist, return a short no-context message.
-    - For each match, include Source ID, Title, Category, and Content.
-    - Separate document blocks clearly.
-    """
-    # TODO: Replace this placeholder with your implementation.
-    return ""
+    blocks = []
+
+    for match in context_matches:
+        document = match["document"]
+
+        block = (
+            f"Source ID: {document.get('id', '')}\n"
+            f"Title: {document.get('title', '')}\n"
+            f"Category: {document.get('category', '')}\n"
+            f"Content: {document.get('text', '')}"
+        )
+
+        blocks.append(block)
+
+    return "\n\n---\n\n".join(blocks)
 
 
 def build_prompt(query: str, context_matches: list[dict[str, Any]]) -> str:
-    """Build a structured prompt with instructions, context, question, and requirements.
+    """Build a grounded prompt for the AI model."""
+    context = format_context(context_matches)
 
-    TODO:
-    The prompt should include these sections:
-    - Instructions
-    - Context
-    - Question
-    - Response requirements
+    return f"""Instructions:
+You are an internal company documentation assistant.
+Answer using only the provided context.
+Do not invent facts, policies, or procedures.
+If the context does not contain the answer, say so.
 
-    The prompt should tell the model to use only the provided context and avoid
-    inventing unsupported details.
-    """
-    # TODO: Replace this placeholder with your implementation.
-    return ""
+Context:
+{context}
+
+Question:
+{query}
+
+Response requirements:
+- Provide a clear and accurate answer.
+- Use only information supported by the context.
+- Do not include unsupported details.
+- Refer to relevant sources when appropriate.
+"""
 
 
 def source_metadata(match: dict[str, Any]) -> dict[str, str]:
-    """Return source information that is safe to expose in the API response.
+    """Return safe source attribution metadata."""
+    document = match["document"]
 
-    TODO:
-    Return only the document id and title.
-    """
-    # TODO: Replace this placeholder with your implementation.
-    return {}
+    return {
+        "id": str(document["id"]),
+        "title": document["title"],
+    }
